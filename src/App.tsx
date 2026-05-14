@@ -212,7 +212,7 @@ function LoginPage({ onLogin }: { onLogin: (username: string) => void }) {
 			localStorage.setItem(CURRENT_USER_STORAGE_KEY, username)
 			onLogin(username)
 		} else {
-			setError('用户名或密码错误')
+			setError('Incorrect username or password')
 		}
 	}
 
@@ -226,7 +226,7 @@ function LoginPage({ onLogin }: { onLogin: (username: string) => void }) {
 				<form className="login-form" onSubmit={handleSubmit}>
 					<input
 						className="login-input"
-						placeholder="用户名"
+						placeholder="Username"
 						value={username}
 						autoComplete="username"
 						onChange={(e) => { setUsername(e.target.value); setError('') }}
@@ -234,13 +234,13 @@ function LoginPage({ onLogin }: { onLogin: (username: string) => void }) {
 					<input
 						className="login-input"
 						type="password"
-						placeholder="密码"
+						placeholder="Password"
 						value={password}
 						autoComplete="current-password"
 						onChange={(e) => { setPassword(e.target.value); setError('') }}
 					/>
 					{error && <p className="login-error">{error}</p>}
-					<button className="login-button" type="submit">进入工作台</button>
+					<button className="login-button" type="submit">Sign in</button>
 				</form>
 			</div>
 		</div>
