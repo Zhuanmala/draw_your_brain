@@ -37,12 +37,14 @@ const CURRENT_USER_STORAGE_KEY = 'draw-your-brain:current-user'
 const USERS: Record<string, string> = {
 	jiale: '123456',
 	nuphar: '123456',
+	admin: 'admin',
 }
 
 // 每位用户对应的主题色（用于头像和光标）
 const USER_COLORS: Record<string, string> = {
 	jiale: '#8ec5ff',
 	nuphar: '#c4b5fd',
+	admin: '#f7d94c',
 }
 
 function loadCurrentUser(): string | null {
