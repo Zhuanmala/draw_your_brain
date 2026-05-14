@@ -188,7 +188,7 @@ function handleEditorMount(editor: Editor, onMount: (editor: Editor) => void) {
 	const showTldrawUi = () => editor.updateInstanceState({ isFocusMode: false })
 	onMount(editor)
 	showTldrawUi()
-	editor.updateInstanceState({ locale: 'en' })
+	try { editor.user.updateUserPreferences({ locale: 'en' }) } catch {}
 	editor.registerExternalAssetHandler('url', getBookmarkPreview)
 	const focusModeTimers = [
 		window.setTimeout(showTldrawUi, 100),
