@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent } from 'react'
 import { useSync } from '@tldraw/sync'
 import {
 	Tldraw,
@@ -31,7 +31,30 @@ const CANVAS_REGISTRY_STORAGE_KEY = 'draw-your-brain:canvas-registry'
 const LEGACY_CANVAS_REGISTRY_STORAGE_KEY = 'drwo-your-brain:canvas-registry'
 const SYNC_ROOM_PREFIX = 'draw-your-brain:v3'
 const TLDRAW_LICENSE_KEY = import.meta.env.VITE_TLDRAW_LICENSE_KEY
+const CURRENT_USER_STORAGE_KEY = 'draw-your-brain:current-user'
 
+// ── 用户列表（用户名 → 密码） ──────────────────────────────────────────────────
+const USERS: Record<string, string> = {
+	jiale: '123456',
+	nuphar: '123456',
+}
+
+// 每位用户对应的主题色（用于头像和光标）
+const USER_COLORS: Record<string, string> = {
+	jiale: '#8ec5ff',
+	nuphar: '#c4b5fd',
+}
+
+function loadCurrentUser(): string | null {
+	try {
+		const u = localStorage.getItem(CURRENT_USER_STORAGE_KEY)
+		return u && USERS[u] ? u : null
+	} catch {
+		return null
+	}
+}
+
+// ── Sticky note / canvas 配色 ─────────────────────────────────────────────────
 const STICKY_NOTE_COLORS = [
 	{ name: 'Yellow', value: 'yellow', preview: '#f7d94c' },
 	{ name: 'Blue', value: 'light-blue', preview: '#8ec5ff' },
@@ -46,6 +69,7 @@ const STICKY_NOTE_COLORS = [
 
 const CANVAS_ACCENTS = ['#8ec5ff', '#9ae6b4', '#c4b5fd', '#ff9aa2', '#f7d94c'] as const
 
+// ── 数据模型 ──────────────────────────────────────────────────────────────────
 interface CanvasModel {
 	id: string
 	title: string
@@ -83,28 +107,25 @@ const INITIAL_CANVASES: CanvasModel[] = [
 
 function loadCanvases() {
 	if (typeof window === 'undefined') return INITIAL_CANVASES
-
 	try {
 		const stored =
 			window.localStorage.getItem(CANVAS_REGISTRY_STORAGE_KEY) ??
 			window.localStorage.getItem(LEGACY_CANVAS_REGISTRY_STORAGE_KEY)
 		if (!stored) return INITIAL_CANVASES
-
 		const parsed = JSON.parse(stored) as CanvasModel[]
-		if (!Array.isArray(parsed) || !parsed.some((canvas) => canvas.id === INITIAL_CANVASES[0].id)) {
+		if (!Array.isArray(parsed) || !parsed.some((c) => c.id === INITIAL_CANVASES[0].id)) {
 			return INITIAL_CANVASES
 		}
-
 		return parsed
 	} catch {
 		return INITIAL_CANVASES
 	}
 }
 
+// ── 编辑器工具函数 ────────────────────────────────────────────────────────────
 function createStickyNote(editor: Editor, clientX: number, clientY: number, color: TLDefaultColorStyle) {
 	const pagePoint = editor.screenToPage({ x: clientX, y: clientY })
 	const id = createShapeId()
-
 	editor.createShape<TLNoteShape>({
 		id,
 		type: 'note',
@@ -125,7 +146,6 @@ function createStickyNote(editor: Editor, clientX: number, clientY: number, colo
 			textFirstEditedBy: null,
 		},
 	})
-
 	editor.select(id)
 	editor.setCurrentTool('select')
 }
@@ -133,7 +153,6 @@ function createStickyNote(editor: Editor, clientX: number, clientY: number, colo
 function createCanvasLink(editor: Editor, clientX: number, clientY: number, canvas: CanvasModel) {
 	const pagePoint = editor.screenToPage({ x: clientX, y: clientY })
 	const id = createShapeId()
-
 	editor.createShape<CanvasLinkShape>({
 		id,
 		type: CANVAS_LINK_SHAPE_TYPE,
@@ -146,7 +165,6 @@ function createCanvasLink(editor: Editor, clientX: number, clientY: number, canv
 			accent: canvas.accent,
 		},
 	})
-
 	editor.select(id)
 	editor.setCurrentTool('select')
 }
@@ -157,7 +175,6 @@ function shouldUseCloudflareSync() {
 	if (syncMode === '0') return false
 	if (import.meta.env.VITE_ENABLE_SYNC === 'true') return true
 	if (import.meta.env.VITE_ENABLE_SYNC === 'false') return false
-
 	return true
 }
 
@@ -167,23 +184,68 @@ function getSyncRoomId(canvasId: string) {
 
 function handleEditorMount(editor: Editor, onMount: (editor: Editor) => void) {
 	const showTldrawUi = () => editor.updateInstanceState({ isFocusMode: false })
-
 	onMount(editor)
 	showTldrawUi()
 	editor.registerExternalAssetHandler('url', getBookmarkPreview)
-
 	const focusModeTimers = [
 		window.setTimeout(showTldrawUi, 100),
 		window.setTimeout(showTldrawUi, 1000),
 	]
 	const focusModeInterval = window.setInterval(showTldrawUi, 500)
-
 	return () => {
 		focusModeTimers.forEach((timer) => window.clearTimeout(timer))
 		window.clearInterval(focusModeInterval)
 	}
 }
 
+// ── 登录页 ────────────────────────────────────────────────────────────────────
+function LoginPage({ onLogin }: { onLogin: (username: string) => void }) {
+	const [username, setUsername] = useState('')
+	const [password, setPassword] = useState('')
+	const [error, setError] = useState('')
+
+	const handleSubmit = (e: FormEvent) => {
+		e.preventDefault()
+		if (USERS[username] !== undefined && USERS[username] === password) {
+			localStorage.setItem(CURRENT_USER_STORAGE_KEY, username)
+			onLogin(username)
+		} else {
+			setError('用户名或密码错误')
+		}
+	}
+
+	return (
+		<div className="login-page">
+			<div className="login-card">
+				<div className="login-brand">
+					<span className="brand-mark" aria-hidden="true">db</span>
+					<span>{APP_NAME}</span>
+				</div>
+				<form className="login-form" onSubmit={handleSubmit}>
+					<input
+						className="login-input"
+						placeholder="用户名"
+						value={username}
+						autoComplete="username"
+						onChange={(e) => { setUsername(e.target.value); setError('') }}
+					/>
+					<input
+						className="login-input"
+						type="password"
+						placeholder="密码"
+						value={password}
+						autoComplete="current-password"
+						onChange={(e) => { setPassword(e.target.value); setError('') }}
+					/>
+					{error && <p className="login-error">{error}</p>}
+					<button className="login-button" type="submit">进入工作台</button>
+				</form>
+			</div>
+		</div>
+	)
+}
+
+// ── 协作画布（Cloudflare Sync） ───────────────────────────────────────────────
 function CollaborativeCanvas({
 	activeCanvasId,
 	onMount,
@@ -211,30 +273,24 @@ function CollaborativeCanvas({
 			setLocalFallbackCanvasId(activeCanvasId)
 			return
 		}
-
 		if (store.status !== 'loading' || localFallbackCanvasId === activeCanvasId) return
-
 		const fallbackTimer = window.setTimeout(() => {
 			setLocalFallbackCanvasId(activeCanvasId)
 		}, 4000)
-
 		return () => window.clearTimeout(fallbackTimer)
 	}, [activeCanvasId, localFallbackCanvasId, store.status])
 
 	useEffect(() => {
 		if (mountedCanvasId === activeCanvasId || localFallbackCanvasId === activeCanvasId) return
-
 		const mountTimer = window.setTimeout(() => {
 			setLocalFallbackCanvasId(activeCanvasId)
 		}, 4500)
-
 		return () => window.clearTimeout(mountTimer)
 	}, [activeCanvasId, localFallbackCanvasId, mountedCanvasId])
 
 	if (localFallbackCanvasId === activeCanvasId) {
 		return <LocalCanvas activeCanvasId={activeCanvasId} onMount={onMount} />
 	}
-
 	if (store.status !== 'synced-remote') {
 		return null
 	}
@@ -270,7 +326,10 @@ function LocalCanvas({
 	)
 }
 
+// ── 主应用 ────────────────────────────────────────────────────────────────────
 function App() {
+	const [currentUser, setCurrentUser] = useState<string | null>(loadCurrentUser)
+	const [onlineUsers, setOnlineUsers] = useState<string[]>([])
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const [canvases, setCanvases] = useState<CanvasModel[]>(loadCanvases)
 	const [activeCanvasId, setActiveCanvasId] = useState(INITIAL_CANVASES[0].id)
@@ -287,6 +346,19 @@ function App() {
 			? (canvases.find((c) => c.id === canvasHistory[canvasHistory.length - 1]) ?? null)
 			: null
 
+	// 登录后更新状态
+	const handleLogin = useCallback((username: string) => {
+		setCurrentUser(username)
+	}, [])
+
+	// 退出登录
+	const handleLogout = useCallback(() => {
+		try { localStorage.removeItem(CURRENT_USER_STORAGE_KEY) } catch {}
+		setCurrentUser(null)
+		setOnlineUsers([])
+	}, [])
+
+	// editor 挂载时同时更新 editorRef
 	const handleSetEditor = useCallback((e: Editor) => {
 		editorRef.current = e
 		setEditor(e)
@@ -300,6 +372,45 @@ function App() {
 			return next
 		})
 	}, [])
+
+	// 把当前用户名/颜色注入 tldraw
+	useEffect(() => {
+		if (!editor || !currentUser) return
+		try {
+			editor.user.updateUserPreferences({
+				name: currentUser,
+				color: USER_COLORS[currentUser] ?? '#8ec5ff',
+			})
+		} catch {}
+	}, [editor, currentUser])
+
+	// 轮询在线用户（presence 记录，5 秒一次）
+	useEffect(() => {
+		if (!editor) return
+
+		const refresh = () => {
+			try {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				const presences: any[] = (editor.store as any).query.records('instance_presence').get()
+				const now = Date.now()
+				const names = [
+					...new Set(
+						presences
+							.filter((p) => now - (p.lastActivityTimestamp ?? 0) < 60_000)
+							.map((p) => p.userName as string)
+							.filter((n) => typeof n === 'string' && n.length > 0)
+					),
+				]
+				setOnlineUsers(names)
+			} catch {
+				// presence API 不可用时静默忽略
+			}
+		}
+
+		refresh()
+		const interval = setInterval(refresh, 5_000)
+		return () => clearInterval(interval)
+	}, [editor])
 
 	useEffect(() => {
 		draggingPaletteItemRef.current = draggingPaletteItem
@@ -315,22 +426,14 @@ function App() {
 
 		const handlePointerMove = (event: globalThis.PointerEvent) => {
 			setDraggingPaletteItem((current) =>
-				current
-					? {
-							...current,
-							x: event.clientX,
-							y: event.clientY,
-						}
-					: current
+				current ? { ...current, x: event.clientX, y: event.clientY } : current
 			)
 		}
 
 		const handlePointerUp = (event: globalThis.PointerEvent) => {
 			const current = draggingPaletteItemRef.current
-
 			if (editor && current) {
 				const distance = Math.hypot(event.clientX - current.startX, event.clientY - current.startY)
-
 				if (distance > DRAG_THRESHOLD && current.type === 'sticky-note') {
 					createStickyNote(editor, event.clientX, event.clientY, current.color)
 				} else if (distance > DRAG_THRESHOLD && current.type === 'canvas-link') {
@@ -342,12 +445,10 @@ function App() {
 						parentId: activeCanvas.id,
 						accent: CANVAS_ACCENTS[childCount % CANVAS_ACCENTS.length],
 					}
-
 					setCanvases((currentCanvases) => [...currentCanvases, canvas])
 					createCanvasLink(editor, event.clientX, event.clientY, canvas)
 				}
 			}
-
 			setDraggingPaletteItem(null)
 		}
 
@@ -375,7 +476,6 @@ function App() {
 			if (canvasId) {
 				setCanvases((currentCanvases) => {
 					if (currentCanvases.some((canvas) => canvas.id === canvasId)) return currentCanvases
-
 					return [
 						...currentCanvases,
 						{
@@ -390,9 +490,7 @@ function App() {
 				setActiveCanvasId(canvasId)
 			}
 		}
-
 		window.addEventListener(OPEN_CANVAS_EVENT, handleOpenCanvas)
-
 		return () => window.removeEventListener(OPEN_CANVAS_EVENT, handleOpenCanvas)
 	}, [activeCanvasId])
 
@@ -400,11 +498,9 @@ function App() {
 		const handleRenameCanvas = (event: Event) => {
 			const detail = (event as CustomEvent<{ canvasId: string; title: string }>).detail
 			if (!detail?.canvasId || !detail?.title) return
-
 			setCanvases((prev) =>
 				prev.map((c) => (c.id === detail.canvasId ? { ...c, title: detail.title } : c))
 			)
-
 			const ed = editorRef.current
 			if (ed) {
 				const shapes = ed.getCurrentPageShapes()
@@ -418,7 +514,6 @@ function App() {
 				}
 			}
 		}
-
 		window.addEventListener(RENAME_CANVAS_EVENT, handleRenameCanvas)
 		return () => window.removeEventListener(RENAME_CANVAS_EVENT, handleRenameCanvas)
 	}, [])
@@ -426,7 +521,6 @@ function App() {
 	const handleStickyNotePointerDown = useCallback(
 		(event: PointerEvent<HTMLButtonElement>, color: TLDefaultColorStyle, preview: string) => {
 			if (!editor) return
-
 			event.preventDefault()
 			setDraggingPaletteItem({
 				type: 'sticky-note',
@@ -444,7 +538,6 @@ function App() {
 	const handleCanvasLinkPointerDown = useCallback(
 		(event: PointerEvent<HTMLButtonElement>) => {
 			if (!editor) return
-
 			event.preventDefault()
 			setDraggingPaletteItem({
 				type: 'canvas-link',
@@ -458,6 +551,14 @@ function App() {
 		[editor]
 	)
 
+	// 未登录 → 显示登录页
+	if (!currentUser) {
+		return <LoginPage onLogin={handleLogin} />
+	}
+
+	// 在线用户列表：确保当前用户始终显示
+	const displayUsers = [...new Set([currentUser, ...onlineUsers])]
+
 	return (
 		<div className="app-shell">
 			{useCloudflareSync ? (
@@ -466,13 +567,35 @@ function App() {
 				<LocalCanvas activeCanvasId={activeCanvas.id} onMount={handleSetEditor} />
 			)}
 
+			{/* 品牌面板 + 在线用户 */}
 			<div className="brand-panel" aria-label={APP_NAME}>
-				<span className="brand-mark" aria-hidden="true">
-					db
-				</span>
+				<span className="brand-mark" aria-hidden="true">db</span>
 				<span>{APP_NAME}</span>
+				{displayUsers.length > 0 && (
+					<div className="online-users">
+						{displayUsers.map((name) => (
+							<div
+								key={name}
+								className="online-user-avatar"
+								style={{ background: USER_COLORS[name] ?? '#ccc' } as CSSProperties}
+								title={name}
+							>
+								{name[0].toUpperCase()}
+							</div>
+						))}
+					</div>
+				)}
+				<button
+					className="logout-button"
+					onClick={handleLogout}
+					title="退出登录"
+					type="button"
+				>
+					↩
+				</button>
 			</div>
 
+			{/* 返回上级画布 */}
 			{parentCanvas && (
 				<div className="canvas-nav-panel">
 					<button className="back-button" onClick={handleBack} type="button">
@@ -482,6 +605,7 @@ function App() {
 				</div>
 			)}
 
+			{/* 工具面板 */}
 			<div className="sticky-note-palette" aria-label="Canvas and sticky note tools">
 				<button
 					aria-label="Drag a child canvas"

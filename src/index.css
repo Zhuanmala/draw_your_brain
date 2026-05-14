@@ -22,6 +22,131 @@ button {
 	position: fixed;
 }
 
+/* ── 登录页 ─────────────────────────────────────────────────────────── */
+.login-page {
+	align-items: center;
+	background: #f7f4ed;
+	display: flex;
+	inset: 0;
+	justify-content: center;
+	position: fixed;
+}
+
+.login-card {
+	background: #fff;
+	border: 1px solid rgba(32, 29, 25, 0.1);
+	border-radius: 16px;
+	box-shadow: 0 24px 64px rgba(30, 25, 18, 0.12);
+	padding: 40px 36px 36px;
+	width: 320px;
+}
+
+.login-brand {
+	align-items: center;
+	display: flex;
+	font-size: 16px;
+	font-weight: 700;
+	gap: 10px;
+	justify-content: center;
+	margin-bottom: 32px;
+	text-transform: lowercase;
+}
+
+.login-form {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.login-input {
+	appearance: none;
+	background: #f7f4ed;
+	border: 1px solid rgba(32, 29, 25, 0.16);
+	border-radius: 8px;
+	color: #26231e;
+	font-size: 14px;
+	height: 44px;
+	outline: none;
+	padding: 0 14px;
+	transition: border-color 120ms;
+	width: 100%;
+}
+
+.login-input:focus {
+	border-color: #8ec5ff;
+	box-shadow: 0 0 0 3px rgba(142, 197, 255, 0.25);
+}
+
+.login-error {
+	color: #e53e3e;
+	font-size: 13px;
+	margin: 0;
+	text-align: center;
+}
+
+.login-button {
+	appearance: none;
+	background: #202124;
+	border: 0;
+	border-radius: 8px;
+	color: #fff5ce;
+	cursor: pointer;
+	font-size: 14px;
+	font-weight: 700;
+	height: 44px;
+	margin-top: 4px;
+	transition: background 120ms, transform 120ms;
+	width: 100%;
+}
+
+.login-button:hover {
+	background: #3c3d40;
+	transform: translateY(-1px);
+}
+
+/* ── 在线用户 & 退出 ──────────────────────────────────────────────────── */
+.online-users {
+	align-items: center;
+	display: flex;
+	gap: 4px;
+	margin-left: 4px;
+}
+
+.online-user-avatar {
+	align-items: center;
+	border: 2px solid #fff;
+	border-radius: 50%;
+	color: #26231e;
+	display: inline-flex;
+	font-size: 11px;
+	font-weight: 700;
+	height: 24px;
+	justify-content: center;
+	width: 24px;
+}
+
+.logout-button {
+	align-items: center;
+	appearance: none;
+	background: transparent;
+	border: 1px solid rgba(32, 29, 25, 0.12);
+	border-radius: 6px;
+	color: #706b62;
+	cursor: pointer;
+	display: inline-flex;
+	font-size: 14px;
+	height: 24px;
+	justify-content: center;
+	margin-left: 2px;
+	padding: 0;
+	width: 24px;
+}
+
+.logout-button:hover {
+	background: #f0ede8;
+	color: #26231e;
+}
+
 .brand-panel {
 	align-items: center;
 	background: rgba(255, 255, 255, 0.92);
