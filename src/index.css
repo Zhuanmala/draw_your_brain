@@ -552,4 +552,9 @@ button {
 		height: 36px;
 		width: 36px;
 	}
+
+	/* 手机端：工具栏在 top:112px，高度约 60px，返回按钮移到下方 */
+	.canvas-nav-panel {
+		top: 182px;
+	}
 }
