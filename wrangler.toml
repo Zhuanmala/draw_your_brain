@@ -1,0 +1,26 @@
+name = "draw-your-brain"
+main = "worker/worker.ts"
+compatibility_date = "2025-05-08"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
+preview_urls = true
+workers_dev = true
+
+[observability]
+enabled = true
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+
+[durable_objects]
+bindings = [{ name = "TLDRAW_DURABLE_OBJECT", class_name = "TldrawDurableObject" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TldrawDurableObject"]
+
+[[r2_buckets]]
+binding = "TLDRAW_BUCKET"
+bucket_name = "draw-your-brain-assets"
+preview_bucket_name = "draw-your-brain-assets-preview"
