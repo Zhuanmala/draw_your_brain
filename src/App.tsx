@@ -301,6 +301,7 @@ function CollaborativeCanvas({
 		<Tldraw
 			key={activeCanvasId}
 			licenseKey={TLDRAW_LICENSE_KEY}
+			locale="en"
 			onMount={(editor) => {
 				setMountedCanvasId(activeCanvasId)
 				return handleEditorMount(editor, onMount)
@@ -322,6 +323,7 @@ function LocalCanvas({
 		<Tldraw
 			key={activeCanvasId}
 			licenseKey={TLDRAW_LICENSE_KEY}
+			locale="en"
 			onMount={(editor) => handleEditorMount(editor, onMount)}
 			shapeUtils={SHAPE_UTILS}
 		/>
