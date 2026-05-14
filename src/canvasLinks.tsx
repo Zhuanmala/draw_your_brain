@@ -7,6 +7,7 @@ import {
 	type TLBaseShape,
 	type TLResizeInfo,
 } from 'tldraw'
+import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
 
 export const CANVAS_LINK_SHAPE_TYPE = 'canvas-link'
@@ -58,15 +59,65 @@ export class CanvasLinkShapeUtil extends BaseBoxShapeUtil<CanvasLinkShape> {
 	}
 
 	override component(shape: CanvasLinkShape) {
+		const openButtonRef = useRef<HTMLButtonElement>(null)
+		const renameButtonRef = useRef<HTMLButtonElement>(null)
+
+		// 始终持有最新的 props，供原生事件回调使用
+		const propsRef = useRef(shape.props)
+		propsRef.current = shape.props
+
+		// 原生事件监听：touchend 不受 pointer capture 影响，手机端可靠触发
+		useEffect(() => {
+			const openBtn = openButtonRef.current
+			const renameBtn = renameButtonRef.current
+			if (!openBtn || !renameBtn) return
+
+			let lastOpenTime = 0
+			let lastRenameTime = 0
+
+			const handleOpenTouchEnd = (e: TouchEvent) => {
+				e.stopPropagation()
+				e.preventDefault()
+				const now = Date.now()
+				if (now - lastOpenTime < 400) return
+				lastOpenTime = now
+				const { accent, canvasId, title } = propsRef.current
+				window.dispatchEvent(
+					new CustomEvent(OPEN_CANVAS_EVENT, { detail: { accent, canvasId, title } })
+				)
+			}
+
+			const handleRenameTouchEnd = (e: TouchEvent) => {
+				e.stopPropagation()
+				e.preventDefault()
+				const now = Date.now()
+				if (now - lastRenameTime < 400) return
+				lastRenameTime = now
+				const { canvasId, title } = propsRef.current
+				const newTitle = window.prompt('Rename canvas:', title)
+				if (newTitle && newTitle.trim() && newTitle.trim() !== title) {
+					window.dispatchEvent(
+						new CustomEvent(RENAME_CANVAS_EVENT, {
+							detail: { canvasId, title: newTitle.trim() },
+						})
+					)
+				}
+			}
+
+			openBtn.addEventListener('touchend', handleOpenTouchEnd, { passive: false })
+			renameBtn.addEventListener('touchend', handleRenameTouchEnd, { passive: false })
+
+			return () => {
+				openBtn.removeEventListener('touchend', handleOpenTouchEnd)
+				renameBtn.removeEventListener('touchend', handleRenameTouchEnd)
+			}
+		}, [])
+
+		// 桌面端点击处理（鼠标没有 pointer capture 问题）
 		const dispatchOpen = () => {
+			const { accent, canvasId, title } = shape.props
 			window.dispatchEvent(
-				new CustomEvent(OPEN_CANVAS_EVENT, {
-					detail: {
-						accent: shape.props.accent,
-						canvasId: shape.props.canvasId,
-						title: shape.props.title,
-					},
-				})
+				new CustomEvent(OPEN_CANVAS_EVENT, { detail: { accent, canvasId, title } })
 			)
 		}
 
@@ -75,10 +126,7 @@ export class CanvasLinkShapeUtil extends BaseBoxShapeUtil<CanvasLinkShape> {
 			if (newTitle && newTitle.trim() && newTitle.trim() !== shape.props.title) {
 				window.dispatchEvent(
 					new CustomEvent(RENAME_CANVAS_EVENT, {
-						detail: {
-							canvasId: shape.props.canvasId,
-							title: newTitle.trim(),
-						},
+						detail: { canvasId: shape.props.canvasId, title: newTitle.trim() },
 					})
 				)
 			}
@@ -101,25 +149,21 @@ export class CanvasLinkShapeUtil extends BaseBoxShapeUtil<CanvasLinkShape> {
 					</div>
 					<div className="canvas-link-shape-actions">
 						<button
+							ref={renameButtonRef}
 							aria-label="Rename canvas"
 							className="canvas-link-shape-rename"
-							onPointerDown={(event) => event.stopPropagation()}
-							onPointerUp={(event) => {
-								event.stopPropagation()
-								dispatchRename()
-							}}
+							onPointerDown={(e) => e.stopPropagation()}
+							onPointerUp={(e) => { e.stopPropagation(); dispatchRename() }}
 							title="Rename"
 							type="button"
 						>
 							✎
 						</button>
 						<button
+							ref={openButtonRef}
 							className="canvas-link-shape-open"
-							onPointerDown={(event) => event.stopPropagation()}
-							onPointerUp={(event) => {
-								event.stopPropagation()
-								dispatchOpen()
-							}}
+							onPointerDown={(e) => e.stopPropagation()}
+							onPointerUp={(e) => { e.stopPropagation(); dispatchOpen() }}
 							type="button"
 						>
 							Open
