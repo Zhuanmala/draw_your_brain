@@ -7,10 +7,11 @@ import {
 	type TLBaseShape,
 	type TLResizeInfo,
 } from 'tldraw'
-import type { CSSProperties, MouseEvent, PointerEvent } from 'react'
+import type { CSSProperties } from 'react'
 
 export const CANVAS_LINK_SHAPE_TYPE = 'canvas-link'
 export const OPEN_CANVAS_EVENT = 'draw-your-brain:open-canvas'
+export const RENAME_CANVAS_EVENT = 'draw-your-brain:rename-canvas'
 
 export interface CanvasLinkShapeProps {
 	w: number
@@ -57,8 +58,7 @@ export class CanvasLinkShapeUtil extends BaseBoxShapeUtil<CanvasLinkShape> {
 	}
 
 	override component(shape: CanvasLinkShape) {
-		const handleOpen = (event: PointerEvent | MouseEvent) => {
-			event.stopPropagation()
+		const dispatchOpen = () => {
 			window.dispatchEvent(
 				new CustomEvent(OPEN_CANVAS_EVENT, {
 					detail: {
@@ -68,6 +68,20 @@ export class CanvasLinkShapeUtil extends BaseBoxShapeUtil<CanvasLinkShape> {
 					},
 				})
 			)
+		}
+
+		const dispatchRename = () => {
+			const newTitle = window.prompt('Rename canvas:', shape.props.title)
+			if (newTitle && newTitle.trim() && newTitle.trim() !== shape.props.title) {
+				window.dispatchEvent(
+					new CustomEvent(RENAME_CANVAS_EVENT, {
+						detail: {
+							canvasId: shape.props.canvasId,
+							title: newTitle.trim(),
+						},
+					})
+				)
+			}
 		}
 
 		return (
@@ -85,14 +99,32 @@ export class CanvasLinkShapeUtil extends BaseBoxShapeUtil<CanvasLinkShape> {
 						<span>Canvas</span>
 						<strong>{shape.props.title}</strong>
 					</div>
-					<button
-						className="canvas-link-shape-open"
-						onClick={handleOpen}
-						onPointerDown={(event) => event.stopPropagation()}
-						type="button"
-					>
-						Open
-					</button>
+					<div className="canvas-link-shape-actions">
+						<button
+							aria-label="Rename canvas"
+							className="canvas-link-shape-rename"
+							onPointerDown={(event) => event.stopPropagation()}
+							onPointerUp={(event) => {
+								event.stopPropagation()
+								dispatchRename()
+							}}
+							title="Rename"
+							type="button"
+						>
+							✎
+						</button>
+						<button
+							className="canvas-link-shape-open"
+							onPointerDown={(event) => event.stopPropagation()}
+							onPointerUp={(event) => {
+								event.stopPropagation()
+								dispatchOpen()
+							}}
+							type="button"
+						>
+							Open
+						</button>
+					</div>
 				</div>
 			</HTMLContainer>
 		)

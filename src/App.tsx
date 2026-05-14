@@ -16,6 +16,7 @@ import {
 	CANVAS_LINK_SHAPE_TYPE,
 	CanvasLinkShapeUtil,
 	OPEN_CANVAS_EVENT,
+	RENAME_CANVAS_EVENT,
 	type CanvasLinkShape,
 } from './canvasLinks'
 
@@ -157,7 +158,7 @@ function shouldUseCloudflareSync() {
 	if (import.meta.env.VITE_ENABLE_SYNC === 'true') return true
 	if (import.meta.env.VITE_ENABLE_SYNC === 'false') return false
 
-	return false
+	return true
 }
 
 function getSyncRoomId(canvasId: string) {
@@ -273,12 +274,32 @@ function App() {
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const [canvases, setCanvases] = useState<CanvasModel[]>(loadCanvases)
 	const [activeCanvasId, setActiveCanvasId] = useState(INITIAL_CANVASES[0].id)
+	const [canvasHistory, setCanvasHistory] = useState<string[]>([])
 	const [draggingPaletteItem, setDraggingPaletteItem] = useState<DraggingPaletteItem | null>(null)
 	const draggingPaletteItemRef = useRef<DraggingPaletteItem | null>(null)
+	const editorRef = useRef<Editor | null>(null)
 	const canvasesRef = useRef(canvases)
 	const useCloudflareSync = shouldUseCloudflareSync()
 
 	const activeCanvas = canvases.find((canvas) => canvas.id === activeCanvasId) ?? canvases[0]
+	const parentCanvas =
+		canvasHistory.length > 0
+			? (canvases.find((c) => c.id === canvasHistory[canvasHistory.length - 1]) ?? null)
+			: null
+
+	const handleSetEditor = useCallback((e: Editor) => {
+		editorRef.current = e
+		setEditor(e)
+	}, [])
+
+	const handleBack = useCallback(() => {
+		setCanvasHistory((h) => {
+			const next = [...h]
+			const prevId = next.pop() ?? INITIAL_CANVASES[0].id
+			setActiveCanvasId(prevId)
+			return next
+		})
+	}, [])
 
 	useEffect(() => {
 		draggingPaletteItemRef.current = draggingPaletteItem
@@ -317,7 +338,7 @@ function App() {
 						canvasesRef.current.filter((canvas) => canvas.parentId === activeCanvas.id).length + 1
 					const canvas: CanvasModel = {
 						id: `canvas-${Date.now()}-${childCount}`,
-						title: `${activeCanvas.title} / ${childCount}`,
+						title: `Canvas ${childCount}`,
 						parentId: activeCanvas.id,
 						accent: CANVAS_ACCENTS[childCount % CANVAS_ACCENTS.length],
 					}
@@ -365,6 +386,7 @@ function App() {
 						},
 					]
 				})
+				setCanvasHistory((h) => [...h, activeCanvasId])
 				setActiveCanvasId(canvasId)
 			}
 		}
@@ -373,6 +395,33 @@ function App() {
 
 		return () => window.removeEventListener(OPEN_CANVAS_EVENT, handleOpenCanvas)
 	}, [activeCanvasId])
+
+	useEffect(() => {
+		const handleRenameCanvas = (event: Event) => {
+			const detail = (event as CustomEvent<{ canvasId: string; title: string }>).detail
+			if (!detail?.canvasId || !detail?.title) return
+
+			setCanvases((prev) =>
+				prev.map((c) => (c.id === detail.canvasId ? { ...c, title: detail.title } : c))
+			)
+
+			const ed = editorRef.current
+			if (ed) {
+				const shapes = ed.getCurrentPageShapes()
+				const match = shapes.find(
+					(s) =>
+						s.type === CANVAS_LINK_SHAPE_TYPE &&
+						(s as CanvasLinkShape).props.canvasId === detail.canvasId
+				)
+				if (match) {
+					ed.updateShape({ id: match.id, type: CANVAS_LINK_SHAPE_TYPE, props: { title: detail.title } })
+				}
+			}
+		}
+
+		window.addEventListener(RENAME_CANVAS_EVENT, handleRenameCanvas)
+		return () => window.removeEventListener(RENAME_CANVAS_EVENT, handleRenameCanvas)
+	}, [])
 
 	const handleStickyNotePointerDown = useCallback(
 		(event: PointerEvent<HTMLButtonElement>, color: TLDefaultColorStyle, preview: string) => {
@@ -412,9 +461,9 @@ function App() {
 	return (
 		<div className="app-shell">
 			{useCloudflareSync ? (
-				<CollaborativeCanvas activeCanvasId={activeCanvas.id} onMount={setEditor} />
+				<CollaborativeCanvas activeCanvasId={activeCanvas.id} onMount={handleSetEditor} />
 			) : (
-				<LocalCanvas activeCanvasId={activeCanvas.id} onMount={setEditor} />
+				<LocalCanvas activeCanvasId={activeCanvas.id} onMount={handleSetEditor} />
 			)}
 
 			<div className="brand-panel" aria-label={APP_NAME}>
@@ -423,6 +472,15 @@ function App() {
 				</span>
 				<span>{APP_NAME}</span>
 			</div>
+
+			{parentCanvas && (
+				<div className="canvas-nav-panel">
+					<button className="back-button" onClick={handleBack} type="button">
+						← {parentCanvas.title}
+					</button>
+					<span className="current-canvas-name">{activeCanvas.title}</span>
+				</div>
+			)}
 
 			<div className="sticky-note-palette" aria-label="Canvas and sticky note tools">
 				<button
