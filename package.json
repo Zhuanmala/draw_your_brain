@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "tsc && vite build",
-		"test": "node --test worker/backup.test.ts src/clipboardFallback.test.ts",
+		"test": "node --test worker/backup.test.ts src/clipboardFallback.test.ts src/embeddedNoteImages.test.ts",
 		"preview": "vite preview",
 		"worker:dev": "wrangler dev",
 		"deploy": "npm run build && wrangler deploy"

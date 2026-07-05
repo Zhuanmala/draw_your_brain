@@ -3,13 +3,16 @@ import { useSync } from '@tldraw/sync'
 import {
 	Tldraw,
 	createShapeId,
+	createShapesForAssets,
 	defaultBindingUtils,
 	defaultShapeUtils,
 	toRichText,
 	type Editor,
 	type TLContent,
+	type TLImageShape,
 	type TLDefaultColorStyle,
 	type TLNoteShape,
+	type TLShapeId,
 	type TldrawOptions,
 } from 'tldraw'
 import { getBookmarkPreview } from './getBookmarkPreview'
@@ -25,6 +28,7 @@ import {
 	hasTldrawClipboardMarker,
 	shouldPasteCachedTldrawContentWhileEditing,
 } from './clipboardFallback'
+import { getEmbeddedImagePlacements } from './embeddedNoteImages'
 
 const APP_NAME = 'draw your brain'
 const DEFAULT_PROJECT_NAME = 'we build it'
@@ -105,6 +109,120 @@ function getPasteFallbackPoint(editor: Editor) {
 	}
 
 	return editor.getViewportPageBounds().center
+}
+
+function getEditingNoteId(editor: Editor): TLShapeId | null {
+	const editingShapeId = editor.getEditingShapeId()
+	if (!editingShapeId) return null
+
+	const shape = editor.getShape(editingShapeId)
+	return shape?.type === 'note' ? editingShapeId : null
+}
+
+function getImageFilesFromClipboardData(clipboardData: DataTransfer | null) {
+	return Array.from(clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'))
+}
+
+function collectImageShapeIds(editor: Editor, shapeIds: TLShapeId[]) {
+	const imageShapeIds: TLShapeId[] = []
+	const seen = new Set<TLShapeId>()
+	const queue = [...shapeIds]
+
+	while (queue.length > 0) {
+		const shapeId = queue.shift()
+		if (!shapeId || seen.has(shapeId)) continue
+
+		seen.add(shapeId)
+		const shape = editor.getShape(shapeId)
+		if (!shape) continue
+		if (shape.type === 'image') imageShapeIds.push(shape.id)
+
+		queue.push(...editor.getSortedChildIdsForParent(shape.id))
+	}
+
+	return imageShapeIds
+}
+
+function contentContainsImageShape(content: TLContent) {
+	return content.shapes.some((shape) => shape.type === 'image')
+}
+
+function getImageOnlyContent(content: TLContent): TLContent {
+	const imageShapes = content.shapes.filter((shape): shape is TLImageShape => shape.type === 'image')
+	const assetIds = new Set(imageShapes.map((shape) => shape.props.assetId).filter((assetId) => assetId))
+
+	return {
+		...content,
+		assets: content.assets.filter((asset) => assetIds.has(asset.id)),
+		bindings: [],
+		rootShapeIds: imageShapes.map((shape) => shape.id),
+		shapes: imageShapes,
+	}
+}
+
+function embedImageShapesInNote(editor: Editor, noteId: TLShapeId, shapeIds: TLShapeId[]) {
+	const imageShapeIds = collectImageShapeIds(editor, shapeIds)
+	if (imageShapeIds.length === 0) return false
+
+	const note = editor.getShape(noteId)
+	if (!note || note.type !== 'note') return false
+
+	const noteBounds = editor.getShapeGeometry(note).bounds
+	const imageShapes = imageShapeIds
+		.map((shapeId) => editor.getShape(shapeId))
+		.filter((shape): shape is TLImageShape => shape?.type === 'image')
+	const placements = getEmbeddedImagePlacements(
+		{ x: noteBounds.x, y: noteBounds.y, w: noteBounds.w, h: noteBounds.h },
+		imageShapes.map((shape) => ({ w: shape.props.w, h: shape.props.h }))
+	)
+
+	editor.markHistoryStoppingPoint('embed images in note')
+	editor.reparentShapes(imageShapeIds, noteId)
+	editor.updateShapes(
+		imageShapes.map((shape, index) => {
+			const placement = placements[index]
+			return {
+				id: shape.id,
+				type: shape.type,
+				x: placement.x,
+				y: placement.y,
+				props: {
+					w: placement.w,
+					h: placement.h,
+				},
+			}
+		})
+	)
+	editor.setSelectedShapes(imageShapeIds)
+	return true
+}
+
+async function embedImageFilesInNote(editor: Editor, noteId: TLShapeId, files: File[]) {
+	const note = editor.getShape(noteId)
+	if (!note || note.type !== 'note') return
+
+	const noteBounds = editor.getShapePageBounds(note)
+	const point = noteBounds?.center ?? editor.getViewportPageBounds().center
+	const assets = (
+		await Promise.all(files.map((file) => editor.getAssetForExternalContent({ type: 'file', file })))
+	).filter((asset): asset is NonNullable<typeof asset> => asset?.type === 'image')
+	const shapeIds = await createShapesForAssets(editor, assets, point)
+	embedImageShapesInNote(editor, noteId, shapeIds)
+}
+
+function embedCachedImagesInNote(editor: Editor, noteId: TLShapeId, content: TLContent) {
+	const beforeSelectedShapeIds = editor.getSelectedShapeIds()
+	editor.putContentOntoCurrentPage(cloneTldrawContent(getImageOnlyContent(content)), {
+		point: getPasteFallbackPoint(editor),
+		select: true,
+	})
+
+	if (!embedImageShapesInNote(editor, noteId, editor.getSelectedShapeIds())) {
+		editor.setSelectedShapes(beforeSelectedShapeIds)
+		return false
+	}
+
+	return true
 }
 
 const TLDRAW_OPTIONS: Partial<TldrawOptions> = {
@@ -465,7 +583,21 @@ function App() {
 		const ownerDocument = editor.getContainer().ownerDocument
 		const handlePasteWhileEditing = (event: ClipboardEvent) => {
 			if (event.defaultPrevented) return
-			if (editor.getEditingShapeId() === null || !lastCopiedTldrawContent) return
+			const editingNoteId = getEditingNoteId(editor)
+			if (!editingNoteId) return
+
+			const imageFiles = getImageFilesFromClipboardData(event.clipboardData)
+			if (imageFiles.length > 0) {
+				event.preventDefault()
+				event.stopPropagation()
+				editor.complete()
+				void embedImageFilesInNote(editor, editingNoteId, imageFiles)
+				return
+			}
+
+			if (!lastCopiedTldrawContent || !contentContainsImageShape(lastCopiedTldrawContent.content)) {
+				return
+			}
 			if (
 				!shouldPasteCachedTldrawContentWhileEditing({
 					clipboardData: event.clipboardData,
@@ -480,12 +612,8 @@ function App() {
 			event.preventDefault()
 			event.stopPropagation()
 
-			const point = getPasteFallbackPoint(editor)
 			editor.complete()
-			editor.putContentOntoCurrentPage(cloneTldrawContent(lastCopiedTldrawContent.content), {
-				point,
-				select: true,
-			})
+			embedCachedImagesInNote(editor, editingNoteId, lastCopiedTldrawContent.content)
 		}
 
 		ownerDocument.addEventListener('paste', handlePasteWhileEditing, true)
