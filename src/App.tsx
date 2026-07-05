@@ -21,6 +21,10 @@ import {
 	RENAME_CANVAS_EVENT,
 	type CanvasLinkShape,
 } from './canvasLinks'
+import {
+	hasTldrawClipboardMarker,
+	shouldPasteCachedTldrawContentWhileEditing,
+} from './clipboardFallback'
 
 const APP_NAME = 'draw your brain'
 const DEFAULT_PROJECT_NAME = 'we build it'
@@ -65,10 +69,6 @@ function cloneTldrawContent(content: TLContent): TLContent {
 	return structuredClone(content)
 }
 
-function hasTldrawClipboardMarker(text: string) {
-	return /<div data-tldraw[^>]*>/.test(text)
-}
-
 function canUseCachedTldrawPaste(info: Parameters<NonNullable<TldrawOptions['onClipboardPasteRaw']>>[0]) {
 	if (!lastCopiedTldrawContent) return false
 	if (Date.now() - lastCopiedTldrawContent.copiedAt > RECENT_COPY_FALLBACK_MS) return false
@@ -95,6 +95,16 @@ function canUseCachedTldrawPaste(info: Parameters<NonNullable<TldrawOptions['onC
 	if (text.trim()) return false
 
 	return true
+}
+
+function getPasteFallbackPoint(editor: Editor) {
+	const editingShapeId = editor.getEditingShapeId()
+	if (editingShapeId) {
+		const bounds = editor.getShapePageBounds(editingShapeId)
+		if (bounds) return bounds.center
+	}
+
+	return editor.getViewportPageBounds().center
 }
 
 const TLDRAW_OPTIONS: Partial<TldrawOptions> = {
@@ -447,6 +457,39 @@ function App() {
 		refresh()
 		const interval = setInterval(refresh, 5_000)
 		return () => clearInterval(interval)
+	}, [editor])
+
+	useEffect(() => {
+		if (!editor) return
+
+		const ownerDocument = editor.getContainer().ownerDocument
+		const handlePasteWhileEditing = (event: ClipboardEvent) => {
+			if (event.defaultPrevented) return
+			if (editor.getEditingShapeId() === null || !lastCopiedTldrawContent) return
+			if (
+				!shouldPasteCachedTldrawContentWhileEditing({
+					clipboardData: event.clipboardData,
+					copiedAt: lastCopiedTldrawContent.copiedAt,
+					maxAgeMs: RECENT_COPY_FALLBACK_MS,
+					now: Date.now(),
+				})
+			) {
+				return
+			}
+
+			event.preventDefault()
+			event.stopPropagation()
+
+			const point = getPasteFallbackPoint(editor)
+			editor.complete()
+			editor.putContentOntoCurrentPage(cloneTldrawContent(lastCopiedTldrawContent.content), {
+				point,
+				select: true,
+			})
+		}
+
+		ownerDocument.addEventListener('paste', handlePasteWhileEditing, true)
+		return () => ownerDocument.removeEventListener('paste', handlePasteWhileEditing, true)
 	}, [editor])
 
 	useEffect(() => {
