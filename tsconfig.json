@@ -30,5 +30,8 @@
 		"worker-env.d.ts",
 		"vite.config.ts",
 		"vite-env.d.ts"
+	],
+	"exclude": [
+		"**/*.test.ts"
 	]
 }

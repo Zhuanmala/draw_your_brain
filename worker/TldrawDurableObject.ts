@@ -53,6 +53,7 @@ interface SocketAttachment {
 
 export class TldrawDurableObject extends DurableObject {
 	private room: TLSocketRoom<TLRecord, void> | null = null
+	private storage: SQLiteSyncStorage<TLRecord> | null = null
 	private readonly sessionIdToWs = new Map<string, WebSocket>()
 
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -62,17 +63,33 @@ export class TldrawDurableObject extends DurableObject {
 		)
 	}
 
-	private getOrCreateRoom(): TLSocketRoom<TLRecord, void> {
-		if (!this.room) {
+	private getOrCreateStorage() {
+		if (!this.storage) {
 			const sql = new DurableObjectSqliteSyncWrapper(this.ctx.storage)
-			const storage = new SQLiteSyncStorage<TLRecord>({
+			this.storage = new SQLiteSyncStorage<TLRecord>({
 				sql,
 				snapshot: SQLiteSyncStorage.hasBeenInitialized(sql) ? undefined : INITIAL_ROOM_SNAPSHOT,
 			})
+		}
 
+		return this.storage
+	}
+
+	private getExistingSnapshot() {
+		if (this.storage) return this.storage.getSnapshot()
+
+		const sql = new DurableObjectSqliteSyncWrapper(this.ctx.storage)
+		if (!SQLiteSyncStorage.hasBeenInitialized(sql)) return null
+
+		this.storage = new SQLiteSyncStorage<TLRecord>({ sql })
+		return this.storage.getSnapshot()
+	}
+
+	private getOrCreateRoom(): TLSocketRoom<TLRecord, void> {
+		if (!this.room) {
 			this.room = new TLSocketRoom<TLRecord, void>({
 				schema,
-				storage,
+				storage: this.getOrCreateStorage(),
 				clientTimeout: Infinity,
 				onSessionSnapshot: (sessionId, snapshot) => {
 					const ws = this.sessionIdToWs.get(sessionId)
@@ -97,10 +114,9 @@ export class TldrawDurableObject extends DurableObject {
 		return this.room
 	}
 
-	private readonly router = AutoRouter({ catch: (e) => error(e) }).get(
-		'/api/connect/:roomId',
-		(request) => this.handleConnect(request)
-	)
+	private readonly router = AutoRouter({ catch: (e) => error(e) })
+		.get('/api/connect/:roomId', (request) => this.handleConnect(request))
+		.get('/api/admin/snapshot/:roomId', (request) => this.handleSnapshot(request))
 
 	fetch(request: Request): Response | Promise<Response> {
 		return this.router.fetch(request)
@@ -117,6 +133,13 @@ export class TldrawDurableObject extends DurableObject {
 		this.getOrCreateRoom().handleSocketConnect({ sessionId, socket: serverWebSocket })
 
 		return new Response(null, { status: 101, webSocket: clientWebSocket })
+	}
+
+	handleSnapshot(request: IRequest) {
+		const snapshot = this.getExistingSnapshot()
+		if (!snapshot) return error(404, `Room has no stored snapshot: ${request.params.roomId}`)
+
+		return Response.json({ snapshot })
 	}
 
 	private getSessionId(ws: WebSocket) {
