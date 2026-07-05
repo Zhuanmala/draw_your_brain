@@ -324,8 +324,6 @@ function CollaborativeCanvas({
 	onMount: (editor: Editor) => void
 }) {
 	const uri = `${window.location.origin}/api/connect/${encodeURIComponent(getSyncRoomId(activeCanvasId))}`
-	const [mountedCanvasId, setMountedCanvasId] = useState<string | null>(null)
-	const [localFallbackCanvasId, setLocalFallbackCanvasId] = useState<string | null>(null)
 	const store = useSync({
 		uri,
 		assets: multiplayerAssetStore,
@@ -333,50 +331,15 @@ function CollaborativeCanvas({
 		bindingUtils: useMemo(() => defaultBindingUtils, []),
 	})
 
-	useEffect(() => {
-		setMountedCanvasId(null)
-		setLocalFallbackCanvasId(null)
-	}, [activeCanvasId])
-
-	useEffect(() => {
-		if (store.status === 'error') {
-			setLocalFallbackCanvasId(activeCanvasId)
-			return
-		}
-		if (store.status !== 'loading' || localFallbackCanvasId === activeCanvasId) return
-		const fallbackTimer = window.setTimeout(() => {
-			setLocalFallbackCanvasId(activeCanvasId)
-		}, 4000)
-		return () => window.clearTimeout(fallbackTimer)
-	}, [activeCanvasId, localFallbackCanvasId, store.status])
-
-	useEffect(() => {
-		if (mountedCanvasId === activeCanvasId || localFallbackCanvasId === activeCanvasId) return
-		const mountTimer = window.setTimeout(() => {
-			setLocalFallbackCanvasId(activeCanvasId)
-		}, 4500)
-		return () => window.clearTimeout(mountTimer)
-	}, [activeCanvasId, localFallbackCanvasId, mountedCanvasId])
-
-	if (localFallbackCanvasId === activeCanvasId) {
-		return <LocalCanvas activeCanvasId={activeCanvasId} onMount={onMount} />
-	}
-	if (store.status !== 'synced-remote') {
-		return null
-	}
-
 	return (
 		<Tldraw
 			key={activeCanvasId}
 			licenseKey={TLDRAW_LICENSE_KEY}
 			locale="en"
-			onMount={(editor) => {
-				setMountedCanvasId(activeCanvasId)
-				return handleEditorMount(editor, onMount)
-			}}
+			onMount={(editor) => handleEditorMount(editor, onMount)}
 			options={TLDRAW_OPTIONS}
 			shapeUtils={SHAPE_UTILS}
-			store={store.store}
+			store={store}
 		/>
 	)
 }
