@@ -7,8 +7,10 @@ import {
 	defaultShapeUtils,
 	toRichText,
 	type Editor,
+	type TLContent,
 	type TLDefaultColorStyle,
 	type TLNoteShape,
+	type TldrawOptions,
 } from 'tldraw'
 import { getBookmarkPreview } from './getBookmarkPreview'
 import { multiplayerAssetStore } from './multiplayerAssetStore'
@@ -32,6 +34,9 @@ const LEGACY_CANVAS_REGISTRY_STORAGE_KEY = 'drwo-your-brain:canvas-registry'
 const SYNC_ROOM_PREFIX = 'draw-your-brain:v3'
 const TLDRAW_LICENSE_KEY = import.meta.env.VITE_TLDRAW_LICENSE_KEY
 const CURRENT_USER_STORAGE_KEY = 'draw-your-brain:current-user'
+const RECENT_COPY_FALLBACK_MS = 5 * 60 * 1000
+
+let lastCopiedTldrawContent: { content: TLContent; copiedAt: number } | null = null
 
 // ── 用户列表（用户名 → 密码） ──────────────────────────────────────────────────
 const USERS: Record<string, string> = {
@@ -54,6 +59,68 @@ function loadCurrentUser(): string | null {
 	} catch {
 		return null
 	}
+}
+
+function cloneTldrawContent(content: TLContent): TLContent {
+	return structuredClone(content)
+}
+
+function hasTldrawClipboardMarker(text: string) {
+	return /<div data-tldraw[^>]*>/.test(text)
+}
+
+function canUseCachedTldrawPaste(info: Parameters<NonNullable<TldrawOptions['onClipboardPasteRaw']>>[0]) {
+	if (!lastCopiedTldrawContent) return false
+	if (Date.now() - lastCopiedTldrawContent.copiedAt > RECENT_COPY_FALLBACK_MS) return false
+
+	if (info.source === 'clipboard-read') {
+		return info.clipboardItems.every((item) => {
+			if (item.types.some((type) => type.startsWith('image/') || type === 'text/html')) return false
+			return true
+		})
+	}
+
+	const clipboardData = info.clipboardData
+	if (!clipboardData) return true
+
+	for (const file of Array.from(clipboardData.files)) {
+		if (file.type.startsWith('image/') || file.type.startsWith('video/')) return false
+	}
+
+	const html = clipboardData.getData('text/html')
+	if (hasTldrawClipboardMarker(html)) return false
+	if (html.trim()) return false
+
+	const text = clipboardData.getData('text/plain')
+	if (text.trim()) return false
+
+	return true
+}
+
+const TLDRAW_OPTIONS: Partial<TldrawOptions> = {
+	onBeforeCopyToClipboard({ content }) {
+		lastCopiedTldrawContent = {
+			content: cloneTldrawContent(content),
+			copiedAt: Date.now(),
+		}
+	},
+	onBeforePasteFromClipboard({ content }) {
+		if (content.type === 'tldraw') {
+			lastCopiedTldrawContent = {
+				content: cloneTldrawContent(content.content),
+				copiedAt: Date.now(),
+			}
+		}
+	},
+	onClipboardPasteRaw(info) {
+		if (!canUseCachedTldrawPaste(info) || !lastCopiedTldrawContent) return
+
+		info.editor.putContentOntoCurrentPage(cloneTldrawContent(lastCopiedTldrawContent.content), {
+			point: info.point,
+			select: true,
+		})
+		return false
+	},
 }
 
 // ── Sticky note / canvas 配色 ─────────────────────────────────────────────────
@@ -307,6 +374,7 @@ function CollaborativeCanvas({
 				setMountedCanvasId(activeCanvasId)
 				return handleEditorMount(editor, onMount)
 			}}
+			options={TLDRAW_OPTIONS}
 			shapeUtils={SHAPE_UTILS}
 			store={store.store}
 		/>
@@ -326,6 +394,7 @@ function LocalCanvas({
 			licenseKey={TLDRAW_LICENSE_KEY}
 			locale="en"
 			onMount={(editor) => handleEditorMount(editor, onMount)}
+			options={TLDRAW_OPTIONS}
 			shapeUtils={SHAPE_UTILS}
 		/>
 	)
