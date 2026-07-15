@@ -50,6 +50,7 @@ let lastCopiedTldrawContent: { content: TLContent; copiedAt: number } | null = n
 const USERS: Record<string, string> = {
 	jiale: '123456',
 	nuphar: '123456',
+	christiane: '123456',
 	admin: 'admin',
 }
 
@@ -57,6 +58,7 @@ const USERS: Record<string, string> = {
 const USER_COLORS: Record<string, string> = {
 	jiale: '#8ec5ff',
 	nuphar: '#c4b5fd',
+	christiane: '#9ae6b4',
 	admin: '#f7d94c',
 }
 
